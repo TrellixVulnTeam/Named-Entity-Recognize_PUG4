@@ -1,0 +1,179 @@
+{
+  "default": {
+    "ORG": "organization entities are limited to named corporate, governmental, or other organizational entities.",
+    "PER": "person entities are named persons or family.",
+    "LOC": "location entities are the name of politically or geographically defined locations such as cities, provinces, countries, international regions, bodies of water, mountains, etc.",
+    "MISC": "examples of miscellaneous entities include events, nationalities, products and works of art."  
+},
+  "labels": [
+    "ORG",
+    "PER",
+    "LOC",
+    "MISC"
+  ]
+}
+
+{
+  "default": {
+    "DNA": "deoxyribonucleic acid",
+    "RNA": "ribonucleic acid",
+    "cell_line": "cell line",
+    "cell_type": "cell type",
+    "protein": "protein entities are limited to nitrogenous organic compounds and are parts of all living organisms, as structural components of body tissues such as muscle, hair, collagen and as enzymes and antibodies."
+  },
+  "labels": [
+    "cell_line",
+    "cell_type",
+    "DNA",
+    "RNA",
+    "protein"
+  ]
+}
+{
+  "default": {
+        "LAW": "law entities are named documents made into laws",
+        "EVENT": "event entities are named hurricanes, battles, wars, sports events",
+        "CARDINAL": "cardinal entities are numerals that do not fall under another type",
+        "FAC": "facility entities are buildings, airports, highways, bridges, etc",
+        "TIME": "time entities are times smaller than a day",
+        "DATE": "data entities are absolute or relative dates or periods",
+        "ORDINAL": "ordinal entities are first or second",
+        "ORG": "organization entities are companies, agencies, institutions",
+        "QUANTITY": "quantity entities are measurements, as of weight or distance",
+        "PERCENT": "percent entities are percentage including %",
+        "WORK_OF_ART": "work of art entities are titles of books, songs",
+        "LOC": "location entities are limited to not geographical locations, mountain ranges, bodies of water",
+        "LANGUAGE": "language entities are limited to any named language",
+        "NORP": "nationalities or religious or political groups",
+        "MONEY": "money entities are limited to monetary values, including unit",
+        "PERSON": "a person entity is limited to people, including fictional",
+        "GPE": "geographical political entities are countries, cities, state",
+        "PRODUCT": "product entities are limited to vehicles, weapons, foods, etc. not services"
+  },
+  "labels": [
+    "LAW",
+    "EVENT",
+    "CARDINAL",
+    "FAC",
+    "TIME",
+    "DATE",
+    "ORDINAL",
+    "ORG",
+    "QUANTITY",
+    "PERCENT",
+    "WORK_OF_ART",
+    "LOC",
+    "LANGUAGE",
+    "NORP",
+    "MONEY",
+    "PERSON",
+    "GPE",
+    "PRODUCT"
+  ]
+}
+{
+  "default": {
+    "ORG": "organization entities are limited to named corporate, governmental, or other organizational entities.",
+    "PER": "person entities are named persons or family.",
+    "LOC": "location entities are the name of politically or geographically defined locations such as cities, provinces, countries, international regions, bodies of water, mountains, etc."
+},
+  "labels": [
+    "ORG",
+    "PER",
+    "LOC"
+  ]
+}
+
+{
+  "default": {
+    "Entity": "All entities"
+  },
+  "labels": [
+    "Entity"
+  ]
+}
+{
+  "default": {
+    "HP": "商标，包括公司，品牌",
+    "HC": "产品，包括商品，作品，食品，用品，设施，副产品，农产品，制成品，软件产品，硬件产品，资讯产品，通讯产品，通信产品，电信产品，电脑产品，手机产品，电子产品，科技产品，其他产品"
+  },
+  "labels": [
+    "HC",
+    "HP"
+  ]
+}
+{
+  "default": {
+    "NR": "人名和虚构的人物形象",
+    "NS": "按照地理位置划分的国家,城市,乡镇,大洲",
+    "NT": "组织包括公司,政府党派,学校,政府,新闻机构"
+  },
+  "labels": [
+    "NS",
+    "NR",
+    "NT"
+  ]
+}
+{
+  "default": {
+    "GPE": "按照国家,城市,州县划分的地理区域",
+    "LOC": "山脉,河流自然景观的地点",
+    "ORG": "组织包括公司,政府党派,学校,政府,新闻机构",
+    "PER": "人名和虚构的人物形象"
+  },
+  "labels": [
+    "LOC",
+    "PER",
+    "GPE",
+    "ORG"
+  ]
+}
+{
+  "default": {
+    "Entity": "所有实体"
+  },
+  "labels": [
+    "Entity"
+  ]
+}
+{
+  "default": {
+    "FAC": "facility entities are limited to buildings and other permanent man-made structures such as buildings, airports, highways, bridges.",
+    "GPE": "geographical political entities are geographical regions defined by political and or social groups such as countries, nations, regions, cities, states, government and its people.",
+    "LOC": "location entities are limited to geographical entities such as geographical areas and landmasses, mountains, bodies of water, and geological formations.",
+    "ORG": "organization entities are limited to companies, corporations, agencies, institutions and other groups of people.",
+    "PER": "a person entity is limited to human including a single individual or a group.",
+    "VEH": "vehicle entities are physical devices primarily designed to move, carry, pull or push the transported object such as helicopters, trains, ship and motorcycles.",
+    "WEA": "weapon entities are limited to physical devices such as instruments for physically harming such as guns, arms and gunpowder."
+  },
+  "labels": [
+    "GPE",
+    "ORG",
+    "PER",
+    "FAC",
+    "VEH",
+    "LOC",
+    "WEA"
+  ]
+}
+
+{
+  "default": {
+    "FAC": "facility entities are limited to buildings and other permanent man-made structures such as buildings, airports, highways, bridges.",
+    "GPE": "geographical political entities are geographical regions defined by political and or social groups such as countries, nations, regions, cities, states, government and its people.",
+    "LOC": "location entities are limited to geographical entities such as geographical areas and landmasses, mountains, bodies of water, and geological formations.",
+    "ORG": "organization entities are limited to companies, corporations, agencies, institutions and other groups of people.",
+    "PER": "a person entity is limited to human including a single individual or a group.",
+    "VEH": "vehicle entities are physical devices primarily designed to move, carry, pull or push the transported object such as helicopters, trains, ship and motorcycles.",
+    "WEA": "weapon entities are limited to physical devices such as instruments for physically harming such as guns, arms and gunpowder."
+  },
+  "labels": [
+    "GPE",
+    "ORG",
+    "PER",
+    "FAC",
+    "VEH",
+    "LOC",
+    "WEA"
+  ]
+}
