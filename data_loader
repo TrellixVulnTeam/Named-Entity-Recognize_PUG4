@@ -1,0 +1,534 @@
+import os 
+import torch
+import sys
+sys.path.append("../data_loader")
+from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler  
+from mrc_utils import convert_examples_to_features
+import numpy as np
+
+
+
+class MRCNERDataLoader(object):
+    def __init__(self, config, data_processor, label_list, tokenizer, mode="train", allow_impossible=True):
+
+        self.data_dir = config.data_dir 
+        self.max_seq_length= config.max_seq_length 
+
+        if mode == "train":
+            self.train_batch_size = config.train_batch_size 
+            self.dev_batch_size = config.dev_batch_size 
+            self.test_batch_size = config.test_batch_size 
+            self.num_train_epochs = config.num_train_epochs 
+        elif mode == "test":
+            self.test_batch_size = config.test_batch_size 
+
+        self.data_processor = data_processor 
+        self.label_list = label_list 
+        self.allow_impossible = allow_impossible
+        self.tokenizer = tokenizer
+        self.max_seq_len = config.max_seq_length 
+        self.data_cache = config.data_cache 
+
+        self.num_train_instances = 0 
+        self.num_dev_instances = 0 
+        self.num_test_instances = 0
+
+    def convert_examples_to_features(self, data_sign="train",):
+
+        print("=*="*10)
+        print("等待{} 数据加载中 ... ...".format(data_sign))
+
+        allow_impossible=self.allow_impossible
+
+        if data_sign == "train":
+            examples = self.data_processor.get_train_examples(self.data_dir)
+            self.num_train_instances = len(examples)
+            #allow_impossible=False
+        elif data_sign == "dev":
+            examples = self.data_processor.get_dev_examples(self.data_dir)
+            self.num_dev_instances = len(examples)
+        elif data_sign == "test":
+            examples = self.data_processor.get_test_examples(self.data_dir)
+            self.num_test_instances = len(examples)
+        else:
+            raise ValueError("please notice that the data_sign can only be train/dev/test !!")
+
+        #cache_path = os.path.join(self.data_dir, "mrc-ner.{}.cache.{}.allow.{}".format(data_sign, str(self.max_seq_len), str(allow_impossible)))
+        cache_path = os.path.join(self.data_dir, "mrc-ner.{}.cache.{}".format(data_sign, str(self.max_seq_len)))#max_seq_len=150
+        if os.path.exists(cache_path) and self.data_cache:#如果满足data_dir下有缓存文件 且 data_cache=True则运行这里，但是因为NEE阶段没有cache_path所以不运行这里
+            features = torch.load(cache_path)#加载缓存
+        else:
+            #ESI阶段features等于这里
+            features = convert_examples_to_features(examples, self.tokenizer, self.label_list, self.max_seq_length, allow_impossible=allow_impossible)
+            if self.data_cache:#ESI阶段的data_cache是true
+                torch.save(features, cache_path)#在cache_path路径下保存features，当想恢复某一阶段的训练时可以直接读取缓存
+        return features#features等于缓存储存的数据
+
+
+    def get_dataloader(self, data_sign="train", saved_dir=None):
+        features = self.convert_examples_to_features(data_sign=data_sign)
+        print(f"{len(features)} {data_sign} 数据已加载")
+        if saved_dir:
+            
+            #NEE阶段因为saved_dir=config.data_dir所以运行这里   torch.tensor()可以从data中的数据部分做拷贝
+            input_ids = torch.tensor(np.load(saved_dir + "train_input_ids.npy"), dtype=torch.long)#np.load()就会使用给定模式对文件进行内存映射，内存映射的矩阵保留在磁盘上，并不是直接全部读取到内存里。
+            input_mask = torch.tensor(np.load(saved_dir + "train_input_mask.npy"), dtype=torch.long)
+            segment_ids = torch.tensor(np.load(saved_dir + "train_segment_ids.npy"), dtype=torch.long)
+            ner_cate = torch.tensor(np.load(saved_dir + "train_ner_cate.npy"), dtype=torch.long)
+            start_pos = torch.tensor(np.load(saved_dir + "train_start_pos.npy"), dtype=torch.long)
+            end_pos = torch.tensor(np.load(saved_dir + "train_end_pos.npy"), dtype=torch.long)
+
+        else:#ESI阶段走这里
+            input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
+            input_mask = torch.tensor([f.input_mask for f in features], dtype=torch.short)
+            segment_ids = torch.tensor([f.segment_ids for f in features], dtype=torch.long)
+            start_pos = torch.tensor([f.start_position for f in features], dtype=torch.short)
+            end_pos = torch.tensor([f.end_position for f in features], dtype=torch.short)
+            ner_cate = torch.tensor([f.ner_cate for f in features], dtype=torch.short)
+        span_pos = torch.tensor([f.span_position for f in features], dtype=torch.short)
+        dataset = TensorDataset(input_ids, input_mask, segment_ids, start_pos, end_pos, span_pos, ner_cate)#可以用来对 tensor 进行打包，就好像 python 中的 zip 功能
+        #TensorDataset 可以用来对 tensor 进行打包，就好像 python 中的 zip 功能。
+        if data_sign == "train":
+            if saved_dir:#顺序
+                datasampler = SequentialSampler(dataset)
+            else:#按照乱序对数据集进行采样，ESI阶段走这里！
+                datasampler = RandomSampler(dataset)
+            dataloader = DataLoader(dataset, sampler=datasampler, batch_size=self.train_batch_size)#将自定义的Dataset根据batch size大小（16）、是否shuffle等封装成一个Batch Size大小的Tensor
+        elif data_sign == "dev":
+            datasampler = RandomSampler(dataset)
+            dataloader = DataLoader(dataset, sampler=datasampler, batch_size=self.dev_batch_size)
+        elif data_sign == "test":
+            datasampler = RandomSampler(dataset)
+            dataloader = DataLoader(dataset, sampler=datasampler, batch_size=self.test_batch_size)
+
+        return dataloader 
+
+
+    def get_num_train_epochs(self, ):
+        return int((self.num_train_instances / self.train_batch_size) * self.num_train_epochs) 
+
+
+
+
+
+
+
+
+
+import os
+import sys
+sys.path.append("../data_loader")
+from mrc_utils import read_mrc_ner_examples 
+
+
+class QueryNERProcessor(object):
+    # 数据处理器
+    def get_train_examples(self, data_dir):#数据输入的位置，在命令行中输入data_dir:data/train_for_ESI/baidubaike/,然后经过下面设置就会设置train/dev/test的输入位置
+        data = read_mrc_ner_examples(os.path.join(data_dir, "mrc-ner.train"))#os.path.join连接两个或更多的路径名组件
+        return data
+
+    def get_dev_examples(self, data_dir):
+        return read_mrc_ner_examples(os.path.join(data_dir, "mrc-ner.dev"))
+
+    def get_test_examples(self, data_dir):
+        return read_mrc_ner_examples(os.path.join(data_dir, "mrc-ner.test"))
+
+
+class Conll03Processor(QueryNERProcessor):
+    def get_labels(self, ):
+        return ["ORG", "PER", "LOC", "MISC", "O"]
+
+
+class MSRAProcessor(QueryNERProcessor):
+    def get_labels(self, ):
+        return ["NS", "NR", "NT", "O"]
+
+
+class OntoNotesProcessor(QueryNERProcessor):#数据集
+    def get_labels(self, ):
+        return ["LOC", "PER", "GPE", "ORG", "O"]
+
+
+class Onto5EngProcessor(QueryNERProcessor):
+    def get_labels(self, ):
+        return ['ORDINAL', 'CARDINAL', 'LOC', 'WORK_OF_ART', 'LANGUAGE', 'ORG', 'FAC', 'PERSON', 'EVENT', 'TIME', 'LAW', 'NORP', 'PERCENT', 'DATE', 'GPE', 'QUANTITY', 'PRODUCT', 'MONEY', 'O']
+
+
+class ResumeZhProcessor(QueryNERProcessor):
+    def get_labels(self, ):
+        return ["ORG", "LOC", "NAME", "RACE", "TITLE", "EDU", "PRO", "CONT", "O"]
+
+
+class GeniaProcessor(QueryNERProcessor):
+    def get_labels(self, ):
+        return ['cell_line', 'cell_type', 'DNA', 'RNA', 'protein', "O"]
+
+
+class ACE2005Processor(QueryNERProcessor):
+    def get_labels(self, ):
+        return ["GPE", "ORG", "PER", "FAC", "VEH", "LOC", "WEA", "O"]
+
+
+class ACE2004Processor(QueryNERProcessor):
+    def get_labels(self, ):
+        return ["GPE", "ORG", "PER", "FAC", "VEH", "LOC", "WEA", "O"]
+
+class BaidubaikeProcessor(QueryNERProcessor):#锚文本
+    def get_labels(self, ):
+        return ["Entity", "O"]
+
+class HPProcessor(QueryNERProcessor):
+    def get_labels(self, ):
+        return ["HP", "O"]
+
+class HCProcessor(QueryNERProcessor):
+    def get_labels(self, ):
+        return ["HC", "O"]
+
+class EcommerceProcessor(QueryNERProcessor):#数据集
+    def get_labels(self, ):
+        return ["HP", "HC", "O"]
+
+class TwitterProcessor(QueryNERProcessor):
+    def get_labels(self, ):
+        return ["PER", "LOC", "ORG", "O"]
+
+class ProjectProcessor(QueryNERProcessor):
+    def get_labels(self, ):
+        return ["PRO", "O"]
+
+
+
+
+
+
+
+
+import json
+import numpy 
+import numpy as np 
+import sys
+sys.path.append("../data_loader")
+
+from bert_tokenizer import whitespace_tokenize 
+
+
+class InputExample(object):
+    def __init__(self, 
+        qas_id, 
+        query_item, 
+        context_item, 
+        doc_tokens = None, 
+        orig_answer_text=None, 
+        start_position=None, 
+        end_position=None,
+        span_position=None,
+        is_impossible=None, 
+        ner_cate=None):
+
+        """
+        is_imposible是布尔型
+        """
+
+        self.qas_id = qas_id 
+        self.query_item = query_item
+        self.context_item = context_item 
+        self.doc_tokens = doc_tokens 
+        self.orig_answer_text = orig_answer_text 
+        self.start_position = start_position 
+        self.end_position = end_position
+        self.span_position = span_position  
+        self.is_impossible = is_impossible 
+        self.ner_cate = ner_cate 
+
+
+
+class InputFeatures(object):
+    """
+   数据的特征
+   起始位置和结束位置是符号列表
+    """
+    def __init__(self, 
+        unique_id, 
+        tokens,  
+        input_ids, 
+        input_mask, 
+        segment_ids, 
+        ner_cate, 
+        start_position=None, 
+        end_position=None, 
+        span_position=None, 
+        is_impossible=None):
+
+        self.unique_id = unique_id 
+        self.tokens = tokens 
+        self.input_mask = input_mask
+        self.input_ids = input_ids 
+        self.ner_cate = ner_cate 
+        self.segment_ids = segment_ids 
+        self.start_position = start_position 
+        self.end_position = end_position 
+        self.span_position = span_position 
+        self.is_impossible = is_impossible
+
+
+def convert_examples_to_features(examples, tokenizer, label_lst, max_seq_length, is_training=True, 
+    allow_impossible=True, pad_sign=True):
+    label_map = {tmp: idx for idx, tmp in enumerate(label_lst)}
+    features = []
+
+    for (example_idx, example) in enumerate(examples):
+        if not allow_impossible:
+            if not example.is_impossible:
+                continue
+        if example_idx%10000==0:
+            print("Loading ....."+str(example_idx))
+
+        query_tokens = tokenizer.tokenize(example.query_item)
+        whitespace_doc = whitespace_tokenize(example.context_item)
+        max_tokens_for_doc = max_seq_length - len(query_tokens) - 3
+
+        if len(example.start_position) == 0 and len(example.end_position) == 0:
+            doc_start_pos = []
+            doc_end_pos = []
+            all_doc_tokens = []
+
+            for token_item in whitespace_doc:
+                tmp_subword_lst = tokenizer.tokenize(token_item)
+                all_doc_tokens.extend(tmp_subword_lst)
+            doc_start_pos = [0] * len(all_doc_tokens)
+            doc_end_pos = [0] * len(all_doc_tokens)
+            #doc_span_pos =  np.zeros((max_seq_length, max_seq_length), dtype=int)
+            doc_span_pos =  np.zeros((1,1), dtype=int)
+        else:
+            doc_start_pos = []
+            doc_end_pos = []
+            #doc_span_pos =  np.zeros((max_seq_length, max_seq_length), dtype=int)
+            doc_span_pos =  np.zeros((1,1), dtype=int)
+
+            all_doc_tokens = []
+            offset_idx_dict = {}
+
+            fake_start_pos = [0] * len(whitespace_doc)
+            fake_end_pos = [0] * len(whitespace_doc)
+
+            for start_item in example.start_position:
+                fake_start_pos[start_item] = 1 
+            for end_item in example.end_position:
+                fake_end_pos[end_item] = 1
+
+            # improve answer span 
+            for idx, (token, start_label, end_label) in enumerate(zip(whitespace_doc, fake_start_pos, fake_end_pos)):
+                tmp_subword_lst = tokenizer.tokenize(token)
+
+                if len(tmp_subword_lst) > 1:
+                    offset_idx_dict[idx] = len(all_doc_tokens)
+
+                    doc_start_pos.append(start_label)
+                    doc_start_pos.extend([0]*(len(tmp_subword_lst) - 1))
+
+                    doc_end_pos.append(end_label)
+                    doc_end_pos.extend([0]*(len(tmp_subword_lst) - 1))
+
+                    all_doc_tokens.extend(tmp_subword_lst)
+                elif len(tmp_subword_lst) == 1:
+                    offset_idx_dict[idx] = len(all_doc_tokens)
+                    doc_start_pos.append(start_label)
+                    doc_end_pos.append(end_label)
+                    all_doc_tokens.extend(tmp_subword_lst) 
+                else:
+                    #raise ValueError("Please check the result of tokenizer !!! !!! ")
+                    offset_idx_dict[idx] = len(all_doc_tokens)
+                    doc_start_pos.append(start_label)
+                    doc_end_pos.append(end_label)
+                    all_doc_tokens.extend(["[UNK]"])
+
+            """
+            省
+			for span_item in example.span_position:
+                s_idx, e_idx = span_item.split(";")
+                if len(query_tokens)+2+offset_idx_dict[int(s_idx)] <= max_tokens_for_doc and \
+                len(query_tokens)+2+offset_idx_dict[int(e_idx)] <= max_tokens_for_doc :
+                    doc_span_pos[len(query_tokens)+2+offset_idx_dict[int(s_idx)]][len(query_tokens)+2+offset_idx_dict[int(e_idx)]] = 1
+                else:
+                    continue
+            """
+
+        assert len(all_doc_tokens) == len(doc_start_pos) 
+        assert len(all_doc_tokens) == len(doc_end_pos) 
+        assert len(doc_start_pos) == len(doc_end_pos) 
+
+
+        if len(all_doc_tokens) >= max_tokens_for_doc:
+            all_doc_tokens = all_doc_tokens[: max_tokens_for_doc]
+            doc_start_pos = doc_start_pos[: max_tokens_for_doc]
+            doc_end_pos = doc_end_pos[: max_tokens_for_doc]
+        if len(example.start_position) == 0 and len(example.end_position) == 0:
+            #doc_span_pos = np.zeros((max_seq_length, max_seq_length), dtype=int)
+            doc_span_pos =  np.zeros((1,1), dtype=int)
+
+        # input_mask: 
+        #   the mask has 1 for real tokens and 0 for padding tokens. 
+        #   only real tokens are attended to. 
+        # segment_ids:
+        #   segment token indices to indicate first and second portions of the inputs. 
+        input_tokens = []
+        segment_ids = []
+        input_mask = []
+        start_pos = []
+        end_pos = []
+
+        input_tokens.append("[CLS]")
+        segment_ids.append(0)
+        start_pos.append(0) 
+        end_pos.append(0)
+
+        for query_item in query_tokens:
+            input_tokens.append(query_item)
+            segment_ids.append(0) 
+            start_pos.append(0)
+            end_pos.append(0)
+
+        input_tokens.append("[SEP]")
+        segment_ids.append(0) 
+        input_mask.append(1) 
+        start_pos.append(0) 
+        end_pos.append(0) 
+
+        input_tokens.extend(all_doc_tokens)
+        segment_ids.extend([1]* len(all_doc_tokens))
+        start_pos.extend(doc_start_pos)
+        end_pos.extend(doc_end_pos) 
+
+        input_tokens.append("[SEP]")
+        segment_ids.append(1)
+        start_pos.append(0)
+        end_pos.append(0)        
+        input_mask = [1] * len(input_tokens)
+       
+
+        input_ids = tokenizer.convert_tokens_to_ids(input_tokens)
+
+        # zero-padding up to the sequence length 
+        if len(input_ids) < max_seq_length and pad_sign:
+            padding = [0] * (max_seq_length - len(input_ids)) 
+            input_ids += padding 
+            input_mask += padding 
+            segment_ids += padding 
+            start_pos += padding 
+            end_pos += padding 
+
+        features.append(
+            InputFeatures(
+                unique_id=example.qas_id, 
+                tokens=input_tokens, 
+                input_ids=input_ids, 
+                input_mask=input_mask, 
+                segment_ids=segment_ids, 
+                start_position=start_pos, 
+                end_position=end_pos, 
+                span_position=doc_span_pos.tolist(),
+                is_impossible=example.is_impossible, 
+                ner_cate=label_map[example.ner_cate]
+                ))
+
+    return features 
+
+
+
+def read_mrc_ner_examples(input_file, is_training=True, with_negative=True):
+    """
+    读取MRC-NER模型输入的数据
+    """
+
+    with open(input_file, "r") as f:
+        input_data = json.load(f) 
+
+    def is_whitespace(c):
+        if c == " " or c == "\t" or c == "\r" or c == "\n" or ord(c) == 0x202F:
+            return True 
+        return False 
+
+    examples = []
+    for entry in input_data:
+        qas_id = entry["qas_id"]
+        query_item = entry["query"]
+        context_item = entry["context"]
+        start_position = entry["start_position"]
+        end_position = entry["end_position"]
+        is_impossible = entry["impossible"]
+        ner_cate = entry["entity_label"]
+        span_position = entry["span_position"]
+
+        example = InputExample(qas_id=qas_id, 
+            query_item=query_item, 
+            context_item=context_item,
+            start_position=start_position, 
+            end_position=end_position,
+            span_position=span_position, 
+            is_impossible=is_impossible, 
+            ner_cate=ner_cate)
+        examples.append(example)
+    print(len(examples))
+    return examples
+
+
+
+
+
+from pytorch_pretrained_bert.tokenization import BertTokenizer 
+def whitespace_tokenize(text):
+    """
+    Desc:对文本进行空白清理和拆分
+        
+    """
+    text = text.strip()
+    if not text:
+        return []
+    tokens = text.split()
+    return tokens 
+
+
+
+class BertTokenizer4Tagger(BertTokenizer):
+    """
+    解决运行word_piece标记化后标注跨度不合适的问题
+    """
+    def __init__(self, vocab_file, do_lower_case=False, max_len=None, 
+        never_split=("[UNK]", "[SEP]", "[PAD]", "[CLS]", "[MASK]")):
+    #super调用父类
+        super(BertTokenizer4Tagger, self).__init__(vocab_file, do_lower_case=do_lower_case, max_len=max_len, never_split=never_split) 
+
+
+    def tokenize(self, text, label_lst=None):
+        """
+        label_lst: ["B", "M", "E", "S", "O"]
+        """
+
+        split_tokens = []
+        split_labels = []
+
+        if label_lst is None:
+            for token in self.basic_tokenizer.tokenize(text):
+                for sub_token in self.wordpiece_tokenizer.tokenize(token):
+                    split_tokens.append(sub_token)
+            return split_tokens 
+
+
+        for token, label in zip(self.basic_tokenizer.tokenize(text), label_lst):
+            # WordpieceTokenizer单词分类
+            #当前token应为1
+            sub_tokens = self.wordpiece_tokenizer.tokenize(token)
+            if len(sub_tokens) > 1:
+                for tmp_idx, tmp_sub_token in enumerate(sub_tokens):#enumerate() 函数用于将一个可遍历的数据对象(如列表、元组或字符串)组合为一个索引序列，同时列出数据和数据下标
+                    if tmp_idx == 0:
+                        split_tokens.append(tmp_sub_token)
+                        split_labels.append(label)
+                    else:
+                        split_tokens.append(tmp_sub_token)
+                        split_labels.append("X")
+            else:
+                split_tokens.append(sub_token)
+                split_labels.append(label)
+
+        return split_tokens, split_labels 
